@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Conversor MySQL para PostgreSQL</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      padding: 20px;
+    }
+    h1, h2 {
+      color: #333;
+    }
+    textarea {
+      width: 100%;
+      margin-bottom: 20px;
+      resize: vertical;
+    }
+    button {
+      padding: 10px 20px;
+      background-color: #28a745;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+  </style>
+</head>
+<body>
+  <h1>Conversor MySQL para PostgreSQL</h1>
+  <textarea id="mysqlTable" rows="10" placeholder="Cole a definição da tabela MySQL aqui..."></textarea><br>
+  <button id="convertButton">Converter</button> <!-- Adicionando um id ao botão -->
+  <h2>Definição da Tabela PostgreSQL:</h2>
+  <textarea id="postgresTable" rows="10" readonly></textarea>
+  
+  <script>
+   function convertMySQLToPostgreSQL(mysqlDefinition) {
+    const tables = mysqlDefinition.split('--').map(part => part.trim()).filter(Boolean);
+    let postgresDefinition = '';
+    
+    tables.forEach(tableDefinition => {
+        let convertedTableDefinition = tableDefinition;
+        
+        // Remover acentos graves.
+        convertedTableDefinition = convertedTableDefinition.replace(/`/g, '"');
+        
+        // Converter tipos de dados.
+        convertedTableDefinition = convertedTableDefinition.replace(/varchar\((\d+)\)/gm, 'varchar($1)');
+        convertedTableDefinition = convertedTableDefinition.replace(/int\(\d+\)/gm, 'integer');
+        convertedTableDefinition = convertedTableDefinition.replace(/bigint\(\d+\)/gm, 'bigint');
+        convertedTableDefinition = convertedTableDefinition.replace(/datetime/gm, 'timestamp');
+        
+        // Tratar campos AUTO_INCREMENT.
+        convertedTableDefinition = convertedTableDefinition.replace(/int\(\d+\) AUTO_INCREMENT/gm, 'serial');
+        convertedTableDefinition = convertedTableDefinition.replace(/bigint\(\d+\) AUTO_INCREMENT/gm, 'bigserial');
+        
+        // Remover DEFAULT '0' de bigserial e serial.
+        convertedTableDefinition = convertedTableDefinition.replace(/bigserial NOT NULL DEFAULT '0'/gm, 'bigserial NOT NULL');
+        convertedTableDefinition = convertedTableDefinition.replace(/serial NOT NULL DEFAULT '0'/gm, 'serial NOT NULL');
+        
+        // Remover a definição do mecanismo de armazenamento.
+        convertedTableDefinition = convertedTableDefinition.replace(/ENGINE=InnoDB DEFAULT CHARSET=latin1;/gm, '');
+        
+        // Tratar ENUM e SET (convertendo para VARCHAR).
+        convertedTableDefinition = convertedTableDefinition.replace(/enum\(([^)]+)\)/gi, 'varchar');
+        convertedTableDefinition = convertedTableDefinition.replace(/set\(([^)]+)\)/gi, 'varchar');
+        
+        // Remover atributos UNSIGNED.
+        convertedTableDefinition = convertedTableDefinition.replace(/unsigned/g, '');
+        
+        // Obter o nome da tabela corrente.
+        const tableNameMatch = tableDefinition.match(/CREATE TABLE ["`](\w+)["`]/);
+        const tableName = tableNameMatch ? tableNameMatch[1] : '';
+        
+        // Extrair e remover as instruções de criação de índice do MySQL.
+        const createIndexMatches = convertedTableDefinition.match(/KEY "([^"]+)" \(([^)]+)\)/g) || [];
+        createIndexMatches.forEach(match => {
+            convertedTableDefinition = convertedTableDefinition.replace(match + ',', '').replace(match, '');
+        });
+        
+         // Remover linhas comentadas e linhas que começam com /*.
+        // convertedTableDefinition = convertedTableDefinition.replace(/^--.*$/gm, '');
+        convertedTableDefinition = convertedTableDefinition.replace(/^\/\*[\s\S]*?\*\/\s*;?/gm, '');
+        convertedTableDefinition = convertedTableDefinition.replace(/^\/\*.*$/gm, '');
+        convertedTableDefinition = convertedTableDefinition.replace(/biginteger/g, 'bigint');
+        
+        // Remover a vírgula que aparece após PRIMARY KEY
+        convertedTableDefinition = convertedTableDefinition.replace(/(PRIMARY KEY[^)]+)\),/g, '$1)');
+
+        // Adicionar instruções de criação de índice no formato do PostgreSQL.
+        createIndexMatches.forEach(match => {
+            const indexMatch = match.match(/KEY "([^"]+)" \(([^)]+)\)/);
+            if (indexMatch) {
+                const indexName = indexMatch[1];
+                const columns = indexMatch[2].split(',').map(column => `${column.trim()}`).join(', ');
+                convertedTableDefinition += `;\nCREATE INDEX "${indexName}_${tableName}" ON "${tableName}" (${columns});`;
+            }
+        });
+        
+        postgresDefinition += convertedTableDefinition + '\n\n';
+    });
+
+    return postgresDefinition;
+}
+// Adicionando um ouvinte de evento ao botão
+document.getElementById('convertButton').addEventListener('click', function() {
+    // Pegando o valor da textarea mysqlTable
+    const mysqlDefinition = document.getElementById('mysqlTable').value;
+    
+    // Chamando a função convertMySQLToPostgreSQL com esse valor
+    const postgresDefinition = convertMySQLToPostgreSQL(mysqlDefinition);
+    
+    // Colocando o resultado na textarea postgresTable
+    document.getElementById('postgresTable').value = postgresDefinition;
+});
+  </script>
+</body>
+</html>
+
